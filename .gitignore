@@ -1,0 +1,15 @@
+.venv/
+__pycache__/
+*.py[cod]
+REDAME.me
+*.png
+*.jpg
+*.jpeg
+*.webp
+.pytest_cache/
+.ruff_cache/
+build/
+dist/
+*.egg-info/
+coverage.xml
+.coverage
