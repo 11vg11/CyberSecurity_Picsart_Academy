@@ -5,12 +5,6 @@ images using least-significant-bit (LSB) encoding, plus basic image inspection. 
 0.1.0 provides the Phase 1 CLI foundation and an initial desktop GUI. It is not a
 general-purpose forensic scanner.
 
-## Other project
-
-This repository also includes [Cronos Web Scanner](./cronos-web-scanner/), a Python
-CLI and desktop tool for authorized, low-impact web security checks. See its
-[project README](./cronos-web-scanner/README.md) for setup, scope, and usage details.
-
 ## Features
 
 - Encode and decode UTF-8 messages in RGB/RGBA PNGs.
