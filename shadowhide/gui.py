@@ -70,6 +70,7 @@ class ShadowHideApp:
         footer = ttk.Frame(root, padding=(20, 0, 20, 12))
         footer.pack(fill="x")
         ttk.Label(footer, textvariable=self.status, style="Status.TLabel").pack(side="left")
+        self.progress = ttk.Progressbar(footer, mode="indeterminate", length=120)
         ttk.Label(
             footer,
             text="Hiding is not encryption. Analysis is not proof of a clean file.",
@@ -104,8 +105,7 @@ class ShadowHideApp:
             anchor="w", pady=(0, 6)
         )
         ttk.Label(frame, text="Text to hide").pack(anchor="w")
-        self.message = tk.Text(frame, height=13, wrap="word", undo=True)
-        self.message.pack(fill="both", expand=True, pady=(5, 8))
+        self.message = self._text_area(frame, height=13, undo=True, pady=(5, 8))
         self.message.bind("<<Modified>>", self._update_payload_count)
         self.payload_count = tk.StringVar(value="0 bytes")
         ttk.Label(frame, textvariable=self.payload_count, style="Subtitle.TLabel").pack(anchor="w")
@@ -142,8 +142,7 @@ class ShadowHideApp:
             wraplength=790,
             style="Subtitle.TLabel",
         ).pack(anchor="w", pady=(2, 8))
-        self.decoded_text = tk.Text(frame, height=17, wrap="word", state="disabled")
-        self.decoded_text.pack(fill="both", expand=True)
+        self.decoded_text = self._text_area(frame, height=17, state="disabled")
 
     def _build_inspect_tab(self) -> None:
         frame = self._tab("Inspect")
@@ -155,8 +154,7 @@ class ShadowHideApp:
             style="Primary.TButton",
             command=self._inspect,
         ).pack(anchor="e", pady=(0, 10))
-        self.inspect_result = tk.Text(frame, height=20, wrap="word", state="disabled")
-        self.inspect_result.pack(fill="both", expand=True)
+        self.inspect_result = self._text_area(frame, height=20, state="disabled")
 
     def _build_analyze_tab(self) -> None:
         frame = self._tab("Analyze")
@@ -173,13 +171,37 @@ class ShadowHideApp:
         ttk.Button(controls, text="Save JSON report", command=self._save_report).pack(
             side="left", padx=(8, 0)
         )
-        self.analysis_result = tk.Text(frame, height=20, wrap="word", state="disabled")
-        self.analysis_result.pack(fill="both", expand=True)
+        self.analysis_result = self._text_area(frame, height=20, state="disabled")
 
     def _tab(self, title: str) -> ttk.Frame:
         frame = ttk.Frame(self.notebook, padding=16)
         self.notebook.add(frame, text=title)
         return frame
+
+    @staticmethod
+    def _text_area(
+        parent: ttk.Frame,
+        height: int,
+        *,
+        state: str = "normal",
+        undo: bool = False,
+        pady: tuple[int, int] = (0, 0),
+    ) -> tk.Text:
+        container = ttk.Frame(parent)
+        container.pack(fill="both", expand=True, pady=pady)
+        scrollbar = ttk.Scrollbar(container, orient="vertical")
+        text = tk.Text(
+            container,
+            height=height,
+            wrap="word",
+            state=state,
+            undo=undo,
+            yscrollcommand=scrollbar.set,
+        )
+        scrollbar.configure(command=text.yview)
+        text.pack(side="left", fill="both", expand=True)
+        scrollbar.pack(side="right", fill="y")
+        return text
 
     @staticmethod
     def _path_row(
@@ -427,6 +449,8 @@ class ShadowHideApp:
             return
         self._busy = True
         self.status.set(description)
+        self.progress.pack(side="right", padx=(8, 0))
+        self.progress.start(10)
 
         future: Future[object] = Future()
 
@@ -454,6 +478,8 @@ class ShadowHideApp:
             return
 
         self._busy = False
+        self.progress.stop()
+        self.progress.pack_forget()
         try:
             result = future.result()
             on_success(result)

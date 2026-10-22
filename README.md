@@ -27,7 +27,8 @@ general-purpose forensic scanner.
   report that checks specifically for a ShadowHide v1 header.
 - An initial Tkinter GUI with Encode, Decode, Inspect, and Analyze tabs, sharing the core
   engine with the CLI.
-- Automated tests using synthetic images. The latest recorded test run passed all 17 tests.
+- Scrollable GUI text areas and a visible activity indicator while background operations run.
+- Automated tests using synthetic images. The latest test run passed all 18 tests.
 
 **GUI environment note:** the GUI code and launcher are present, but Tkinter was unavailable
 in the Python 3.14 environment used during development, so launching and visually validating
@@ -36,7 +37,7 @@ used by the virtual environment before running `shadowhide-gui`.
 
 **Not implemented yet:** binary/file payloads, password-based authenticated encryption,
 general-purpose steganography detection, metadata/EXIF and appended-data forensics,
-color-channel/bit-plane and statistical analysis, progress/cancellation controls, and
+color-channel/bit-plane and statistical analysis, operation cancellation controls, and
 broader release engineering. A negative ShadowHide-header check is not evidence that an
 image contains no hidden data or is safe.
 
@@ -70,9 +71,10 @@ shadowhide-gui
 ```
 
 Or, from a source checkout, run `python -m shadowhide.gui`. The GUI includes Encode, Decode,
-Inspect, and Analyze tabs. Longer operations run off the UI thread. Decoded text is only
-displayed after selecting that action; extracted files and reports use safe output handling
-and ask before replacing an existing file.
+Inspect, and Analyze tabs. Longer operations run off the UI thread, with a visible activity
+indicator and scrollable text areas. Decoded text is only displayed after selecting that
+action; extracted files and reports use safe output handling and ask before replacing an
+existing file.
 
 The input image is not modified. By default, an existing output is not overwritten; use
 `--force` to replace it deliberately. Decode does not print payload contents unless
@@ -141,9 +143,9 @@ Work is intentionally staged so later capabilities build on the tested core:
 
 1. **Foundation — implemented:** packaging, PNG validation, text encode/decode, versioned
    payload header, capacity checks, initial CLI, tests, and documentation.
-2. **Desktop usability — initial implementation:** Tkinter GUI for existing core operations.
-   Verify GUI behavior on supported desktop environments and improve accessibility and
-   interaction feedback.
+2. **Desktop usability — improved:** Tkinter GUI for existing core operations, scrollable
+   text areas, and visible background-operation feedback. Verify behavior on supported
+   desktop environments and continue improving accessibility.
 3. **Secure payloads — planned:** binary/file payloads and established authenticated
    encryption with password-based key derivation, documented parameters, and tamper/wrong
    password tests.

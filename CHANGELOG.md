@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- Add scrollbars to GUI text areas and an activity indicator for background operations.
+
 ## 0.1.0 — Initial Phase 1 release
 
 - Add a versioned UTF-8 payload format and PNG RGB/RGBA LSB encoding/decoding.
