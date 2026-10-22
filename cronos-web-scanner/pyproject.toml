@@ -1,0 +1,36 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "cronos-web-scanner"
+version = "0.2.0"
+description = "Authorized, low-impact web security checks with CLI and desktop GUI"
+requires-python = ">=3.10"
+dependencies = [
+  "requests>=2.31.0",
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=8.0.0",
+  "responses>=0.25.0",
+]
+
+[project.scripts]
+cronos-scan = "scanner:main"
+cronos-gui = "gui:main"
+
+[tool.setuptools]
+py-modules = ["scanner", "gui"]
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["checks*", "fingerprint*", "reports*", "utils*"]
+
+[tool.setuptools.package-data]
+fingerprint = ["signatures.json"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra"

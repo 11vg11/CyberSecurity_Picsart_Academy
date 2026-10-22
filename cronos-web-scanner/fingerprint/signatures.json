@@ -1,0 +1,83 @@
+{
+  "WordPress": {
+    "category": "CMS",
+    "cpe_vendor": "wordpress",
+    "cpe_product": "wordpress",
+    "html": [
+      "wp-content/",
+      "<meta name=\"generator\" content=\"WordPress\\s+([0-9.]+)\""
+    ],
+    "headers": {
+      "Link": "<[^>]+wp-json[^>]+>"
+    },
+    "cookies": ["wordpress_logged_in_", "wp-settings-"]
+  },
+  "Nginx": {
+    "category": "Web Server",
+    "cpe_vendor": "f5",
+    "cpe_product": "nginx",
+    "headers": {
+      "Server": "nginx(?:/([0-9.]+))?"
+    }
+  },
+  "Apache": {
+    "category": "Web Server",
+    "cpe_vendor": "apache",
+    "cpe_product": "http_server",
+    "headers": {
+      "Server": "Apache(?:/([0-9.]+))?"
+    }
+  },
+  "PHP": {
+    "category": "Programming Language",
+    "cpe_vendor": "php",
+    "cpe_product": "php",
+    "headers": {
+      "X-Powered-By": "PHP/([0-9.]+)"
+    },
+    "cookies": ["PHPSESSID"]
+  },
+  "Express": {
+    "category": "Web Framework",
+    "headers": {
+      "X-Powered-By": "Express"
+    },
+    "cookies": ["connect.sid"]
+  },
+  "Laravel": {
+    "category": "Web Framework",
+    "cookies": ["laravel_session", "XSRF-TOKEN"]
+  },
+  "ASP.NET": {
+    "category": "Web Framework",
+    "headers": {
+      "X-AspNet-Version": "([0-9.]+)",
+      "X-Powered-By": "ASP\\.NET"
+    },
+    "cookies": ["ASP.NET_SessionId"]
+  },
+  "Django": {
+    "category": "Web Framework",
+    "cookies": ["csrftoken", "sessionid"],
+    "html": ["csrfmiddlewaretoken"]
+  },
+  "Next.js": {
+    "category": "JS Framework",
+    "html": ["__NEXT_DATA__", "/_next/static/"]
+  },
+  "React": {
+    "category": "JS Library",
+    "html": ["data-reactroot", "react-dom"]
+  },
+  "jQuery": {
+    "category": "JS Library",
+    "html": ["jquery(?:-|\\.)([0-9.]+)?\\.(?:min\\.)?js"]
+  },
+  "Cloudflare": {
+    "category": "WAF/CDN",
+    "headers": {
+      "Server": "cloudflare",
+      "CF-RAY": ".+"
+    }
+  }
+}
