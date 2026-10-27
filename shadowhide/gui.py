@@ -24,7 +24,9 @@ from . import __version__
 from .analysis import analyze_png
 from .core import (
     MAX_PAYLOAD_BYTES,
-    decode_text,
+    PAYLOAD_TYPE_TEXT,
+    decode_data,
+    encode_file,
     encode_text,
     inspect_png,
     png_payload_capacity,
@@ -46,6 +48,7 @@ class ShadowHideApp:
         self.root.minsize(720, 560)
         self._tasks: queue.Queue[tuple[Future[object], Callable[[object], None]]] = queue.Queue()
         self._busy = False
+        self._payload_count_job: str | None = None
         self.last_report: dict[str, object] | None = None
 
         self._configure_style()
@@ -73,7 +76,7 @@ class ShadowHideApp:
         self.progress = ttk.Progressbar(footer, mode="indeterminate", length=120)
         ttk.Label(
             footer,
-            text="Hiding is not encryption. Analysis is not proof of a clean file.",
+            text="Unencrypted hiding is not encryption. Analysis is not proof of a clean file.",
             style="Warning.TLabel",
         ).pack(side="right")
         self.root.after(100, self._poll_tasks)
@@ -94,21 +97,60 @@ class ShadowHideApp:
         frame = self._tab("Encode")
         self.cover_path = tk.StringVar()
         self.encoded_path = tk.StringVar()
+        self.encode_password = tk.StringVar()
+        self.encode_mode = tk.StringVar(value="text")
+        self.binary_input_path = tk.StringVar()
         self.capacity_text = tk.StringVar(value="Choose a PNG to check available capacity.")
 
         self._path_row(frame, "Cover PNG", self.cover_path, self._choose_cover)
         self._path_row(frame, "Output PNG", self.encoded_path, self._choose_encoded_output)
+        input_modes = ttk.Frame(frame)
+        input_modes.pack(anchor="w", pady=(0, 6))
+        ttk.Radiobutton(
+            input_modes,
+            text="Text",
+            variable=self.encode_mode,
+            value="text",
+            command=self._update_encode_mode,
+        ).pack(side="left")
+        ttk.Radiobutton(
+            input_modes,
+            text="Binary file",
+            variable=self.encode_mode,
+            value="binary",
+            command=self._update_encode_mode,
+        ).pack(side="left", padx=(8, 0))
         ttk.Button(frame, text="Check capacity", command=self._check_capacity).pack(
             anchor="e", pady=(0, 8)
         )
         ttk.Label(frame, textvariable=self.capacity_text, style="Subtitle.TLabel").pack(
             anchor="w", pady=(0, 6)
         )
-        ttk.Label(frame, text="Text to hide").pack(anchor="w")
-        self.message = self._text_area(frame, height=13, undo=True, pady=(5, 8))
-        self.message.bind("<<Modified>>", self._update_payload_count)
+        self.text_input_frame = ttk.Frame(frame)
+        ttk.Label(self.text_input_frame, text="Text to hide").pack(anchor="w")
+        self.message = self._text_area(self.text_input_frame, height=13, undo=True, pady=(5, 8))
+        self.message.bind("<<Modified>>", self._schedule_payload_count)
         self.payload_count = tk.StringVar(value="0 bytes")
-        ttk.Label(frame, textvariable=self.payload_count, style="Subtitle.TLabel").pack(anchor="w")
+        ttk.Label(
+            self.text_input_frame, textvariable=self.payload_count, style="Subtitle.TLabel"
+        ).pack(anchor="w")
+        self.binary_input_frame = ttk.Frame(frame)
+        self._path_row(
+            self.binary_input_frame,
+            "File to hide",
+            self.binary_input_path,
+            self._choose_binary_input,
+        )
+        ttk.Label(
+            self.binary_input_frame,
+            text="The file is embedded as raw bytes; its original name is not stored.",
+            style="Subtitle.TLabel",
+        ).pack(anchor="w")
+        self._update_encode_mode()
+        ttk.Label(frame, text="Password (optional, encrypts the payload)").pack(
+            anchor="w", pady=(6, 2)
+        )
+        ttk.Entry(frame, textvariable=self.encode_password, show="*", width=40).pack(anchor="w")
         ttk.Button(
             frame,
             text="Encode text",
@@ -120,8 +162,15 @@ class ShadowHideApp:
         frame = self._tab("Decode")
         self.decode_path = tk.StringVar()
         self.decode_output = tk.StringVar()
+        self.decode_password = tk.StringVar()
         self._path_row(frame, "Encoded PNG", self.decode_path, self._choose_decode_input)
-        self._path_row(frame, "Save text to (optional)", self.decode_output, self._choose_decode_output)
+        self._path_row(
+            frame, "Save payload to (optional)", self.decode_output, self._choose_decode_output
+        )
+        ttk.Label(frame, text="Password (required for encrypted payloads)").pack(
+            anchor="w", pady=(0, 2)
+        )
+        ttk.Entry(frame, textvariable=self.decode_password, show="*", width=40).pack(anchor="w")
         buttons = ttk.Frame(frame)
         buttons.pack(fill="x", pady=(4, 8))
         ttk.Button(
@@ -137,8 +186,8 @@ class ShadowHideApp:
         ).pack(side="left", padx=(8, 0))
         ttk.Label(
             frame,
-            text="Text is only displayed after you choose “Show extracted text.” "
-            "Extracting to a file avoids placing it in the application window.",
+            text="Text is only displayed after choosing “Show extracted text.” "
+            "Binary payloads must be extracted to a file.",
             wraplength=790,
             style="Subtitle.TLabel",
         ).pack(anchor="w", pady=(2, 8))
@@ -236,6 +285,11 @@ class ShadowHideApp:
         if path:
             self.encoded_path.set(path)
 
+    def _choose_binary_input(self) -> None:
+        path = filedialog.askopenfilename(title="Select binary file to embed")
+        if path:
+            self.binary_input_path.set(path)
+
     def _choose_decode_input(self) -> None:
         self._choose_png(self.decode_path, "Select encoded PNG")
 
@@ -255,11 +309,25 @@ class ShadowHideApp:
             variable.set(path)
 
     def _choose_decode_output(self) -> None:
-        path = filedialog.asksaveasfilename(title="Save extracted text")
+        path = filedialog.asksaveasfilename(title="Save extracted payload")
         if path:
             self.decode_output.set(path)
 
-    def _update_payload_count(self, _event: tk.Event[tk.Misc] | None = None) -> None:
+    def _update_encode_mode(self) -> None:
+        if self.encode_mode.get() == "binary":
+            self.text_input_frame.pack_forget()
+            self.binary_input_frame.pack(fill="x", expand=True)
+        else:
+            self.binary_input_frame.pack_forget()
+            self.text_input_frame.pack(fill="both", expand=True)
+
+    def _schedule_payload_count(self, _event: tk.Event[tk.Misc] | None = None) -> None:
+        if self._payload_count_job is not None:
+            self.root.after_cancel(self._payload_count_job)
+        self._payload_count_job = self.root.after(150, self._update_payload_count)
+
+    def _update_payload_count(self) -> None:
+        self._payload_count_job = None
         if self.message.edit_modified():
             text = self.message.get("1.0", "end-1c")
             size = len(text.encode("utf-8"))
@@ -288,11 +356,17 @@ class ShadowHideApp:
     def _encode(self) -> None:
         cover = Path(self.cover_path.get().strip())
         output = Path(self.encoded_path.get().strip())
-        text = self.message.get("1.0", "end-1c")
+        binary_path = Path(self.binary_input_path.get().strip())
+        binary_mode = self.encode_mode.get() == "binary"
+        text = "" if binary_mode else self.message.get("1.0", "end-1c")
+        password = self.encode_password.get() or None
         if not self.cover_path.get().strip() or not self.encoded_path.get().strip():
             self._show_error("Choose both a cover PNG and an output path.")
             return
-        if len(text.encode("utf-8")) > MAX_PAYLOAD_BYTES:
+        if binary_mode and not self.binary_input_path.get().strip():
+            self._show_error("Choose a file to embed.")
+            return
+        if not binary_mode and len(text.encode("utf-8")) > MAX_PAYLOAD_BYTES:
             self._show_error("Text exceeds the 4 MiB payload limit.")
             return
         force = self._confirm_overwrite(output)
@@ -300,24 +374,35 @@ class ShadowHideApp:
             return
 
         def operation() -> int:
-            return encode_text(cover, output, text, force=force)
+            if binary_mode:
+                return encode_file(cover, output, binary_path, force=force, password=password)
+            return encode_text(cover, output, text, force=force, password=password)
 
         self._start_task(
-            "Encoding text…",
+            "Encoding file…" if binary_mode else "Encoding text…",
             operation,
             lambda result: self.status.set(
-                f"Encoded {int(result):,} UTF-8 bytes to {output}"
+                f"Encoded {int(result):,} {'file' if binary_mode else 'UTF-8'} bytes to {output}"
             ),
         )
 
     def _decode_to_view(self) -> None:
         path = self.decode_path.get().strip()
+        password = self.decode_password.get() or None
         if not path:
             self._show_error("Choose an encoded PNG first.")
             return
 
+        def extract() -> tuple[int, bytes]:
+            return decode_data(Path(path), password)
+
         def show(result: object) -> None:
-            text = str(result)
+            payload_type, payload = result  # type: ignore[misc]
+            if payload_type != PAYLOAD_TYPE_TEXT:
+                self.status.set("Binary payload detected; use “Extract to file” to save it.")
+                self._set_text(self.decoded_text, "")
+                return
+            text = payload.decode("utf-8")
             display_limit = 250_000
             self.decoded_text.configure(state="normal")
             self.decoded_text.delete("1.0", "end")
@@ -331,14 +416,15 @@ class ShadowHideApp:
                 self.status.set(f"Extracted {len(text.encode('utf-8')):,} UTF-8 bytes.")
 
         self._start_task(
-            "Extracting text…",
-            lambda: decode_text(Path(path)),
+            "Extracting payload…",
+            extract,
             show,
         )
 
     def _decode_to_file(self) -> None:
         source_text = self.decode_path.get().strip()
         output_text = self.decode_output.get().strip()
+        password = self.decode_password.get() or None
         if not source_text:
             self._show_error("Choose an encoded PNG first.")
             return
@@ -354,14 +440,14 @@ class ShadowHideApp:
             return
 
         def operation() -> Path:
-            text = decode_text(source)
-            write_bytes_safely(text.encode("utf-8"), source, output, force)
+            _, payload = decode_data(source, password)
+            write_bytes_safely(payload, source, output, force)
             return output
 
         self._start_task(
-            "Saving extracted text…",
+            "Saving extracted payload…",
             operation,
-            lambda result: self.status.set(f"Extracted text saved to {result}"),
+            lambda result: self.status.set(f"Extracted payload saved to {result}"),
         )
 
     def _inspect(self) -> None:

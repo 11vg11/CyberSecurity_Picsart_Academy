@@ -12,12 +12,14 @@ from . import __version__
 from .analysis import analyze_png
 from .core import (
     MAX_PAYLOAD_BYTES,
-    decode_text,
+    PAYLOAD_TYPE_TEXT,
+    decode_data,
+    encode_file,
     encode_text,
     inspect_png,
 )
 from .errors import ShadowHideError
-from .paths import write_bytes_safely
+from .paths import validate_output_path, write_bytes_safely
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -28,19 +30,32 @@ def _parser() -> argparse.ArgumentParser:
     )
     commands = parser.add_subparsers(dest="command", required=True)
 
-    encode = commands.add_parser("encode", help="embed UTF-8 text in a PNG")
+    encode = commands.add_parser("encode", help="embed text or binary data in a PNG")
     encode.add_argument("--input", required=True, type=Path, help="cover PNG image")
     encode.add_argument("--output", required=True, type=Path, help="new PNG output path")
     text_group = encode.add_mutually_exclusive_group(required=True)
     text_group.add_argument("--text", help="text to embed")
     text_group.add_argument("--text-file", type=Path, help="UTF-8 file containing text to embed")
+    text_group.add_argument("--binary-file", type=Path, help="raw file to embed as binary data")
+    encode_password = encode.add_mutually_exclusive_group()
+    encode_password.add_argument("--password", help="password for authenticated encryption")
+    encode_password.add_argument(
+        "--password-stdin", action="store_true", help="read the encryption password from stdin"
+    )
     encode.add_argument("--force", action="store_true", help="replace an existing output file")
     encode.add_argument("--json", action="store_true", help="emit a JSON result")
 
-    decode = commands.add_parser("decode", help="extract a ShadowHide text payload")
+    decode = commands.add_parser("decode", help="extract a ShadowHide payload")
     decode.add_argument("--input", required=True, type=Path, help="encoded PNG image")
-    decode.add_argument("--output", type=Path, help="write decoded text to a new file")
-    decode.add_argument("--stdout", action="store_true", help="explicitly print decoded text")
+    decode.add_argument("--output", type=Path, help="write decoded payload to a new file")
+    decode.add_argument(
+        "--stdout", action="store_true", help="explicitly print decoded text or raw bytes"
+    )
+    decode_password = decode.add_mutually_exclusive_group()
+    decode_password.add_argument("--password", help="password needed for encrypted payloads")
+    decode_password.add_argument(
+        "--password-stdin", action="store_true", help="read the decryption password from stdin"
+    )
     decode.add_argument("--force", action="store_true", help="replace an existing output file")
     decode.add_argument("--json", action="store_true", help="emit a JSON result")
 
@@ -72,7 +87,26 @@ def _read_text_file(path: Path) -> str:
         raise ShadowHideError(f"Cannot read text payload file: {exc}") from exc
 
 
-def _write_json_report(report: dict[str, object], input_path: Path, output: Path, force: bool) -> None:
+def _read_password_from_stdin() -> str:
+    password = sys.stdin.readline()
+    if password.endswith("\n"):
+        password = password[:-1]
+    if password.endswith("\r"):
+        password = password[:-1]
+    if not password:
+        raise ShadowHideError("Password input from stdin was empty.")
+    return password
+
+
+def _password_from_args(args: argparse.Namespace) -> str | None:
+    if getattr(args, "password_stdin", False):
+        return _read_password_from_stdin()
+    return getattr(args, "password", None)
+
+
+def _write_json_report(
+    report: dict[str, object], input_path: Path, output: Path, force: bool
+) -> None:
     encoded = (json.dumps(report, indent=2, ensure_ascii=False) + "\n").encode("utf-8")
     write_bytes_safely(encoded, input_path, output, force)
 
@@ -83,15 +117,30 @@ def _run(args: argparse.Namespace) -> int:
         return 0
 
     if args.command == "encode":
-        text = args.text if args.text is not None else _read_text_file(args.text_file)
-        if args.text_file is not None and args.text_file.resolve() == args.output.resolve():
-            raise ShadowHideError("Text input and output paths must be different.")
-        count = encode_text(args.input, args.output, text, args.force)
+        password = _password_from_args(args)
+        payload_type = "text"
+        if args.binary_file is not None:
+            if args.binary_file.resolve() == args.output.resolve():
+                raise ShadowHideError("Binary input and output paths must be different.")
+            count = encode_file(args.input, args.output, args.binary_file, args.force, password)
+            payload_type = "binary"
+        else:
+            if args.text_file is not None:
+                if args.text_file.resolve() == args.output.resolve():
+                    raise ShadowHideError("Text input and output paths must be different.")
+                text = _read_text_file(args.text_file)
+            else:
+                text = args.text
+            count = encode_text(args.input, args.output, text, args.force, password)
+
         result = {"status": "encoded", "output": str(args.output), "payload_bytes": count}
+        if payload_type == "binary":
+            result["payload_type"] = payload_type
         if args.json:
             print(json.dumps(result))
         else:
-            print(f"Encoded {count} payload bytes to {args.output}")
+            label = "binary payload" if payload_type == "binary" else "payload"
+            print(f"Encoded {count} {label} bytes to {args.output}")
         return 0
 
     if args.command == "decode":
@@ -99,21 +148,49 @@ def _run(args: argparse.Namespace) -> int:
             raise ShadowHideError("Choose either --output or --stdout, not both.")
         if args.stdout and args.json:
             raise ShadowHideError("Choose either --stdout or --json for decoded output.")
-        text = decode_text(args.input)
+        if args.output is not None:
+            validate_output_path(args.input, args.output, args.force)
+        payload_type, payload = decode_data(args.input, _password_from_args(args))
         if args.stdout:
-            sys.stdout.write(text)
-            if not text.endswith("\n"):
-                sys.stdout.write("\n")
-        elif args.output is not None:
-            write_bytes_safely(text.encode("utf-8"), args.input, args.output, args.force)
-            if args.json:
-                print(json.dumps({"status": "decoded", "output": str(args.output)}))
+            if payload_type == PAYLOAD_TYPE_TEXT:
+                sys.stdout.write(payload.decode("utf-8"))
+                if not payload.endswith(b"\n"):
+                    sys.stdout.write("\n")
             else:
-                print(f"Decoded text written to {args.output}")
+                sys.stdout.buffer.write(payload)
+        elif args.output is not None:
+            write_bytes_safely(payload, args.input, args.output, args.force)
+            label = "text" if payload_type == PAYLOAD_TYPE_TEXT else "binary"
+            if args.json:
+                print(
+                    json.dumps(
+                        {
+                            "status": "decoded",
+                            "output": str(args.output),
+                            "payload_type": label,
+                        }
+                    )
+                )
+            else:
+                print(f"Decoded {label} payload written to {args.output}")
         elif args.json:
-            print(json.dumps({"status": "decoded", "payload_bytes": len(text.encode("utf-8"))}))
+            label = "text" if payload_type == PAYLOAD_TYPE_TEXT else "binary"
+            print(
+                json.dumps(
+                    {
+                        "status": "decoded",
+                        "payload_type": label,
+                        "payload_bytes": len(payload),
+                    }
+                )
+            )
         else:
-            print("A valid text payload was extracted. Specify --output or --stdout to retrieve it.")
+            if payload_type == PAYLOAD_TYPE_TEXT:
+                print(
+                    "A valid text payload was extracted. Specify --output or --stdout to retrieve it."
+                )
+            else:
+                print("A valid binary payload was extracted. Specify --output to retrieve it.")
         return 0
 
     if args.command == "inspect":

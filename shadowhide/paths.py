@@ -20,9 +20,7 @@ def validate_output_path(input_path: Path, output_path: Path, force: bool) -> No
         raise OutputError(f"Output already exists: {output_path}. Use --force to replace it.")
 
 
-def save_image_safely(
-    image: Image.Image, input_path: Path, output_path: Path, force: bool
-) -> None:
+def save_image_safely(image: Image.Image, input_path: Path, output_path: Path, force: bool) -> None:
     validate_output_path(input_path, output_path, force)
     temp_path: Path | None = None
     try:
@@ -37,7 +35,9 @@ def save_image_safely(
             os.link(temp_path, output_path)
             temp_path.unlink()
     except FileExistsError as exc:
-        raise OutputError(f"Output already exists: {output_path}. Use --force to replace it.") from exc
+        raise OutputError(
+            f"Output already exists: {output_path}. Use --force to replace it."
+        ) from exc
     except OSError as exc:
         raise OutputError(f"Cannot write output file: {exc}") from exc
     finally:
@@ -48,9 +48,7 @@ def save_image_safely(
                 pass
 
 
-def write_bytes_safely(
-    data: bytes, input_path: Path, output_path: Path, force: bool
-) -> None:
+def write_bytes_safely(data: bytes, input_path: Path, output_path: Path, force: bool) -> None:
     validate_output_path(input_path, output_path, force)
     temp_path: Path | None = None
     try:
@@ -67,7 +65,9 @@ def write_bytes_safely(
             os.link(temp_path, output_path)
             temp_path.unlink()
     except FileExistsError as exc:
-        raise OutputError(f"Output already exists: {output_path}. Use --force to replace it.") from exc
+        raise OutputError(
+            f"Output already exists: {output_path}. Use --force to replace it."
+        ) from exc
     except OSError as exc:
         raise OutputError(f"Cannot write output file: {exc}") from exc
     finally:
